@@ -2348,7 +2348,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerShooting
   damage: 25
   range: 100
-  lineRenderer: {fileID: 0}
+  lineRenderer: {fileID: 1889270948}
   lineDuration: 0.05
 --- !u!1 &263239020
 GameObject:
@@ -5581,7 +5581,7 @@ MonoBehaviour:
   crouchHeight: 1
   standingHeight: 1.8
   cameraTransform: {fileID: 170175685}
-  mouseSensitivity: 1
+  mouseSensitivity: 10
   maxLookAngle: 80
 --- !u!143 &1889270946
 CharacterController:
