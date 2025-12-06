@@ -1,46 +1,39 @@
-using UnityEngine;
 using System.Collections;
-using UnityEngine.InputSystem; // для InputAction.CallbackContext
+using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class PlayerShooting : MonoBehaviour
 {
+    [Header("Refs")]
+    [SerializeField] private Camera playerCamera;
+    [SerializeField] private LineRenderer lineRenderer;
+    [SerializeField] private PlayerMovement playerMovement; // чтобы дернуть отдачу
+
     [Header("Shooting")]
-    public float damage = 25f;       // сколько урона наносим
-    public float range = 100f;       // дальность выстрела
+    [SerializeField] private float damage = 25f;
+    [SerializeField] private float range = 100f;
+    [SerializeField] private float lineDuration = 0.05f;
 
-    [Header("Effects")]
-    public LineRenderer lineRenderer; // ссылка на LineRenderer
-    public float lineDuration = 0.05f; // как долго показывать луч (в секундах)
-
-    private Camera cam;
-
+    [Header("Recoil")]
+    [SerializeField] private float recoilPerShot = 2f; // 1–3 градусов обычно достаточно
 
     private void Awake()
     {
-        cam = GetComponent<Camera>();
-        if (cam == null)
-        {
-            Debug.LogWarning("PlayerShooting: Камера не найдена на объекте!");
-        }
+        if (playerCamera == null)
+            playerCamera = Camera.main;
 
-        // Если lineRenderer не задан в инспекторе — пробуем найти на этом объекте
         if (lineRenderer == null)
-        {
             lineRenderer = GetComponent<LineRenderer>();
-        }
 
-        // На старте луч скрыт
         if (lineRenderer != null)
         {
             lineRenderer.enabled = false;
+            lineRenderer.positionCount = 2;
         }
     }
 
-
-    // Этот метод будет вызываться из Player Input (Fire)
     public void OnFire(InputAction.CallbackContext context)
     {
-        // Стреляем только в момент нажатия, а не когда держим кнопку
         if (!context.performed)
             return;
 
@@ -49,19 +42,20 @@ public class PlayerShooting : MonoBehaviour
 
     private void ShootRaycast()
     {
-        if (cam == null)
+        if (playerCamera == null)
             return;
 
-        // Направление взгляда камеры
-        Ray ray = new Ray(cam.transform.position, cam.transform.forward);
-        Vector3 startPos = ray.origin;
-        Vector3 endPos = ray.origin + ray.direction * range;
+        Vector3 startPos = playerCamera.transform.position;
+        Vector3 direction = playerCamera.transform.forward;
 
+        Vector3 endPos;
+
+        Ray ray = new Ray(startPos, direction);
         if (Physics.Raycast(ray, out RaycastHit hitInfo, range))
         {
-            endPos = hitInfo.point; // если попали — конец луча в точке попадания
-            Debug.Log("Попали в: " + hitInfo.collider.name);
+            endPos = hitInfo.point;
 
+            // временно прям по Health, позже замените на IDamageable
             Health health = hitInfo.collider.GetComponent<Health>();
             if (health != null)
             {
@@ -70,15 +64,21 @@ public class PlayerShooting : MonoBehaviour
         }
         else
         {
-            Debug.Log("Промах");
+            endPos = startPos + direction * range;
         }
 
-        // Рисуем луч, если есть LineRenderer
         if (lineRenderer != null)
         {
             lineRenderer.SetPosition(0, startPos);
             lineRenderer.SetPosition(1, endPos);
+            StopAllCoroutines();
             StartCoroutine(ShowLine());
+        }
+
+        // отдача камеры
+        if (playerMovement != null)
+        {
+            playerMovement.AddRecoil(recoilPerShot);
         }
     }
 

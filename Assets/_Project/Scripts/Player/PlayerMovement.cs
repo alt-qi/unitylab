@@ -38,6 +38,10 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float cameraBobAmplitude = 0.05f;
     [SerializeField] private float cameraBobFrequency = 10f;
 
+    [Header("Recoil")]
+    [SerializeField] private float recoilReturnSpeed = 8f; // чем выше, тем быстрее камера возвращается
+    private float recoilOffset; // дополнительный угол по X от отдачи
+
     private Vector2 moveInput;
     private Vector2 lookInput;
 
@@ -85,7 +89,7 @@ public class PlayerMovement : MonoBehaviour
         HandleCameraEffects();
     }
 
-    #region Input callbacks (New Input System)
+    #region Input callbacks
 
     public void OnMove(InputAction.CallbackContext context)
     {
@@ -124,7 +128,7 @@ public class PlayerMovement : MonoBehaviour
         ToggleCrouch();
     }
 
-    // НОВЫЙ input-колбэк для прицеливания (Aim)
+    // Aim (ПКМ)
     public void OnAim(InputAction.CallbackContext context)
     {
         if (context.performed || context.started)
@@ -137,11 +141,10 @@ public class PlayerMovement : MonoBehaviour
 
     private void HandleMovement()
     {
-        // базовая горизонтальная скорость
         float currentSpeed;
         if (isCrouching)
             currentSpeed = crouchSpeed;
-        else if (isSprinting && !isAiming) // прицеливание отключает спринт
+        else if (isSprinting && !isAiming) // прицеливаешься — не спринтишь
             currentSpeed = sprintSpeed;
         else
             currentSpeed = walkSpeed;
@@ -149,10 +152,9 @@ public class PlayerMovement : MonoBehaviour
         Vector3 move = transform.right * moveInput.x + transform.forward * moveInput.y;
         move *= currentSpeed;
 
-        // гравитация
         if (controller.isGrounded && verticalVelocity < 0f)
         {
-            verticalVelocity = -2f; // маленький прижим к земле
+            verticalVelocity = -2f;
         }
         verticalVelocity += gravity * Time.deltaTime;
         move.y = verticalVelocity;
@@ -165,6 +167,9 @@ public class PlayerMovement : MonoBehaviour
         if (cameraTransform == null)
             return;
 
+        // сглаживаем отдачу → стремится к 0
+        recoilOffset = Mathf.Lerp(recoilOffset, 0f, recoilReturnSpeed * Time.deltaTime);
+
         float sensitivity = mouseSensitivity * (isAiming ? aimSensitivityMultiplier : 1f);
 
         float yaw = lookInput.x * sensitivity * Time.deltaTime;
@@ -173,7 +178,8 @@ public class PlayerMovement : MonoBehaviour
         float pitchDelta = -lookInput.y * sensitivity * Time.deltaTime;
         cameraPitch = Mathf.Clamp(cameraPitch + pitchDelta, -maxLookAngle, maxLookAngle);
 
-        cameraTransform.localEulerAngles = new Vector3(cameraPitch, 0f, 0f);
+        float totalPitch = Mathf.Clamp(cameraPitch + recoilOffset, -maxLookAngle, maxLookAngle);
+        cameraTransform.localEulerAngles = new Vector3(totalPitch, 0f, 0f);
     }
 
     private void HandleCameraEffects()
@@ -199,7 +205,7 @@ public class PlayerMovement : MonoBehaviour
             fovLerpSpeed * Time.deltaTime
         );
 
-        // 2) целевая позиция камеры (ADS-офсет)
+        // 2) базовая локальная позиция (ADS)
         Vector3 targetLocalPos = isAiming ? aimCameraLocalPos : defaultCameraLocalPos;
 
         // 3) bob при беге
@@ -228,17 +234,40 @@ public class PlayerMovement : MonoBehaviour
 
     private void ToggleCrouch()
     {
-        isCrouching = !isCrouching;
-
+        // хотим встать
         if (isCrouching)
         {
-            controller.height = crouchHeight;
-            controller.center = new Vector3(standingCenter.x, crouchHeight / 2f, standingCenter.z);
-        }
-        else
-        {
+            if (!CanStandUp())
+                return; // над головой потолок, сидим дальше
+
+            isCrouching = false;
             controller.height = standingHeight;
             controller.center = standingCenter;
         }
+        else // хотим присесть
+        {
+            isCrouching = true;
+            controller.height = crouchHeight;
+            controller.center = new Vector3(standingCenter.x, crouchHeight / 2f, standingCenter.z);
+        }
+    }
+
+    // проверка, есть ли место, чтобы выпрямиться
+    private bool CanStandUp()
+    {
+        // точка старта — примерно центр коллизии в приседе
+        Vector3 origin = transform.position + Vector3.up * (crouchHeight / 2f);
+        float checkDistance = standingHeight - crouchHeight + 0.1f;
+        float radius = controller.radius * 0.9f;
+
+        // если сверху что-то есть → стоять нельзя
+        return !Physics.SphereCast(origin, radius, Vector3.up, out _, checkDistance, ~0, QueryTriggerInteraction.Ignore);
+    }
+
+    // вызывается стрельбой, чтобы добавить небольшой "кик" камеры
+    public void AddRecoil(float recoilAmount)
+    {
+        // отрицательное значение двигает камеру вверх (как отдача)
+        recoilOffset -= recoilAmount;
     }
 }
