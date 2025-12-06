@@ -37,8 +37,6 @@ public class IconBar : MonoBehaviour
             imgComponent.sprite = fullIcon;
             icons.Add(imgComponent);
         }
-
-        UpdateBar(0.82f);
     }
 
     public void UpdateBar(float percent)
