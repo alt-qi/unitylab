@@ -1,56 +1,91 @@
 using UnityEngine;
-using UnityEngine.InputSystem; // новая Input System
+using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(CharacterController))]
 public class PlayerMovement : MonoBehaviour
 {
-    [Header("Stats Source")]
-    public PlayerStatsSO stats;
+    [Header("References")]
+    [SerializeField] private CharacterController controller;
+    [SerializeField] private Transform cameraTransform;
+    [SerializeField] private PlayerStatsSO stats;
 
     [Header("Movement")]
-    public float walkSpeed = 4f;
-    public float sprintSpeed = 7f;
-    public float gravity = -9.81f;
-    public float jumpHeight = 1.5f;
+    [SerializeField] private float walkSpeed = 4f;
+    [SerializeField] private float sprintSpeed = 7f;
+    [SerializeField] private float crouchSpeed = 2f;
+    [SerializeField] private float gravity = -9.81f;
+    [SerializeField] private float jumpHeight = 1.5f;
 
     [Header("Crouch")]
-    public float crouchSpeed = 2f;          // скорость при приседе
-    public float crouchHeight = 1.0f;       // высота контроллера при приседе
-    public float standingHeight = 1.8f;     // высота стоя
+    [SerializeField] private float crouchHeight = 1f;
+    private float standingHeight;
+    private Vector3 standingCenter;
+    private bool isCrouching;
 
+    [Header("Look")]
+    [SerializeField] private float mouseSensitivity = 100f;
+    [SerializeField] private float maxLookAngle = 85f;
 
-    [Header("Camera")]
-    public Transform cameraTransform;       // сюда дадим Main Camera
-    public float mouseSensitivity = 1f;     // чувствительность мыши
-    public float maxLookAngle = 80f;        // ограничение вверх/вниз
+    [Header("Aim (ADS)")]
+    [SerializeField] private float aimFov = 40f;
+    [SerializeField] private Vector3 aimCameraOffset = new Vector3(0.1f, -0.05f, 0.1f);
+    [SerializeField] private float aimSensitivityMultiplier = 0.5f;
+    [SerializeField] private float fovLerpSpeed = 10f;
+    [SerializeField] private float cameraPosLerpSpeed = 10f;
 
-    private CharacterController controller;
-    private Vector2 moveInput;  // из Input System (WASD)
-    private Vector2 lookInput;  // из Input System (мышь)
+    [Header("Sprint Camera Bob")]
+    [SerializeField] private float sprintFov = 70f;
+    [SerializeField] private float cameraBobAmplitude = 0.05f;
+    [SerializeField] private float cameraBobFrequency = 10f;
+
+    private Vector2 moveInput;
+    private Vector2 lookInput;
+
     private float verticalVelocity;
-    private float currentSpeed;
-    private float cameraPitch = 0f;
+    private bool isSprinting;
+    private bool isAiming;
+
+    private float cameraPitch;
+    private Camera playerCamera;
+    private float defaultFov;
+    private Vector3 defaultCameraLocalPos;
+    private Vector3 aimCameraLocalPos;
+    private float bobTimer;
 
     private void Awake()
     {
-        controller = GetComponent<CharacterController>();
+        if (controller == null)
+            controller = GetComponent<CharacterController>();
 
         if (stats != null)
         {
-            // Берём скорости из ScriptableObject
             walkSpeed = stats.walkSpeed;
             sprintSpeed = stats.sprintSpeed;
             crouchSpeed = stats.crouchSpeed;
         }
-        else
-        {
-            Debug.LogWarning("PlayerMovement: Stats SO не назначен, используются значения из инспектора.");
-        }
 
-        currentSpeed = walkSpeed;
+        standingHeight = controller.height;
+        standingCenter = controller.center;
+
+        if (cameraTransform != null)
+        {
+            playerCamera = cameraTransform.GetComponent<Camera>();
+            defaultCameraLocalPos = cameraTransform.localPosition;
+            aimCameraLocalPos = defaultCameraLocalPos + aimCameraOffset;
+
+            if (playerCamera != null)
+                defaultFov = playerCamera.fieldOfView;
+        }
     }
 
-    // Эти методы будет вызывать Player Input (через Events)
+    private void Update()
+    {
+        HandleMovement();
+        HandleLook();
+        HandleCameraEffects();
+    }
+
+    #region Input callbacks (New Input System)
 
     public void OnMove(InputAction.CallbackContext context)
     {
@@ -64,59 +99,61 @@ public class PlayerMovement : MonoBehaviour
 
     public void OnJump(InputAction.CallbackContext context)
     {
-        if (context.performed && controller.isGrounded)
+        if (!context.performed)
+            return;
+
+        if (controller.isGrounded)
         {
-            // формула прыжка по физике
             verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
         }
     }
 
     public void OnSprint(InputAction.CallbackContext context)
     {
-        if (context.performed)
-        {
-            currentSpeed = sprintSpeed;
-        }
+        if (context.performed || context.started)
+            isSprinting = true;
         else if (context.canceled)
-        {
-            currentSpeed = walkSpeed;
-        }
+            isSprinting = false;
     }
+
     public void OnCrouch(InputAction.CallbackContext context)
     {
-        if (context.performed)
-        {
-            // Переход в присед
-            controller.height = crouchHeight;
-            currentSpeed = crouchSpeed;
-        }
-        else if (context.canceled)
-        {
-            // Возврат в полный рост
-            controller.height = standingHeight;
-            currentSpeed = walkSpeed;
-        }
+        if (!context.performed)
+            return;
+
+        ToggleCrouch();
     }
 
-
-    private void Update()
+    // НОВЫЙ input-колбэк для прицеливания (Aim)
+    public void OnAim(InputAction.CallbackContext context)
     {
-        HandleMovement();
-        HandleLook();
+        if (context.performed || context.started)
+            isAiming = true;
+        else if (context.canceled)
+            isAiming = false;
     }
+
+    #endregion
 
     private void HandleMovement()
     {
-        // движение по локальным осям игрока
+        // базовая горизонтальная скорость
+        float currentSpeed;
+        if (isCrouching)
+            currentSpeed = crouchSpeed;
+        else if (isSprinting && !isAiming) // прицеливание отключает спринт
+            currentSpeed = sprintSpeed;
+        else
+            currentSpeed = walkSpeed;
+
         Vector3 move = transform.right * moveInput.x + transform.forward * moveInput.y;
         move *= currentSpeed;
 
         // гравитация
-        if (controller.isGrounded && verticalVelocity < 0)
+        if (controller.isGrounded && verticalVelocity < 0f)
         {
-            verticalVelocity = -2f; // прижимаем к земле
+            verticalVelocity = -2f; // маленький прижим к земле
         }
-
         verticalVelocity += gravity * Time.deltaTime;
         move.y = verticalVelocity;
 
@@ -125,17 +162,83 @@ public class PlayerMovement : MonoBehaviour
 
     private void HandleLook()
     {
-        // горизонтальный поворот (вокруг оси Y)
-        float yaw = lookInput.x * mouseSensitivity * Time.deltaTime;
+        if (cameraTransform == null)
+            return;
+
+        float sensitivity = mouseSensitivity * (isAiming ? aimSensitivityMultiplier : 1f);
+
+        float yaw = lookInput.x * sensitivity * Time.deltaTime;
         transform.Rotate(Vector3.up * yaw);
 
-        // вертикальный поворот камеры (вверх/вниз)
-        float pitchDelta = -lookInput.y * mouseSensitivity * Time.deltaTime;
+        float pitchDelta = -lookInput.y * sensitivity * Time.deltaTime;
         cameraPitch = Mathf.Clamp(cameraPitch + pitchDelta, -maxLookAngle, maxLookAngle);
 
-        if (cameraTransform != null)
+        cameraTransform.localEulerAngles = new Vector3(cameraPitch, 0f, 0f);
+    }
+
+    private void HandleCameraEffects()
+    {
+        if (cameraTransform == null || playerCamera == null)
+            return;
+
+        // 1) целевой FOV
+        float targetFov = defaultFov;
+
+        if (isAiming)
         {
-            cameraTransform.localEulerAngles = new Vector3(cameraPitch, 0f, 0f);
+            targetFov = aimFov;
+        }
+        else if (isSprinting && controller.isGrounded && moveInput.magnitude > 0.1f)
+        {
+            targetFov = sprintFov;
+        }
+
+        playerCamera.fieldOfView = Mathf.Lerp(
+            playerCamera.fieldOfView,
+            targetFov,
+            fovLerpSpeed * Time.deltaTime
+        );
+
+        // 2) целевая позиция камеры (ADS-офсет)
+        Vector3 targetLocalPos = isAiming ? aimCameraLocalPos : defaultCameraLocalPos;
+
+        // 3) bob при беге
+        if (isSprinting && controller.isGrounded && moveInput.magnitude > 0.1f && !isAiming)
+        {
+            bobTimer += Time.deltaTime * cameraBobFrequency;
+            float bobOffsetY = Mathf.Sin(bobTimer) * cameraBobAmplitude;
+            Vector3 bob = new Vector3(0f, bobOffsetY, 0f);
+
+            cameraTransform.localPosition = Vector3.Lerp(
+                cameraTransform.localPosition,
+                targetLocalPos + bob,
+                cameraPosLerpSpeed * Time.deltaTime
+            );
+        }
+        else
+        {
+            bobTimer = 0f;
+            cameraTransform.localPosition = Vector3.Lerp(
+                cameraTransform.localPosition,
+                targetLocalPos,
+                cameraPosLerpSpeed * Time.deltaTime
+            );
+        }
+    }
+
+    private void ToggleCrouch()
+    {
+        isCrouching = !isCrouching;
+
+        if (isCrouching)
+        {
+            controller.height = crouchHeight;
+            controller.center = new Vector3(standingCenter.x, crouchHeight / 2f, standingCenter.z);
+        }
+        else
+        {
+            controller.height = standingHeight;
+            controller.center = standingCenter;
         }
     }
 }
