@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class HUDManager : MonoBehaviour
 {
@@ -15,6 +16,7 @@ public class HUDManager : MonoBehaviour
         {
             playerHealth.OnHealthChanged += UpdateHealthUI;
             playerHealth.OnArmorChanged += UpdateArmorUI;
+            playerHealth.OnDied += ReturnToMainMenu;
         }
     }
 
@@ -46,5 +48,10 @@ public class HUDManager : MonoBehaviour
     {
         float percent = (max > 0) ? current / max : 0f;
         armorBar.UpdateBar(percent);
+    }
+
+    private void ReturnToMainMenu()
+    {
+        SceneManager.LoadScene("_Project/Scenes/Dev/MainMenu");
     }
 }

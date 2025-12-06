@@ -6243,8 +6243,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DebugDamage
   targetHealth: {fileID: 1889270950}
-  damageAmount: 1
-  healAmount: 1
+  damageAmount: 20
+  healAmount: 15
 --- !u!43 &1952509084
 Mesh:
   m_ObjectHideFlags: 0
