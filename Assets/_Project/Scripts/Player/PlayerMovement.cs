@@ -18,6 +18,7 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Crouch")]
     [SerializeField] private float crouchHeight = 1f;
+    [SerializeField] private float crouchCameraYOffset = -0.5f;
     private float standingHeight;
     private Vector3 standingCenter;
     private bool isCrouching;
@@ -205,8 +206,16 @@ public class PlayerMovement : MonoBehaviour
             fovLerpSpeed * Time.deltaTime
         );
 
-        // 2) базовая локальная позиция (ADS)
-        Vector3 targetLocalPos = isAiming ? aimCameraLocalPos : defaultCameraLocalPos;
+        Vector3 baseLocalPos = defaultCameraLocalPos;
+
+        // если сидим — опускаем камеру
+        if (isCrouching)
+        {
+            baseLocalPos += new Vector3(0f, crouchCameraYOffset, 0f);
+        }
+
+        // если целимся — добавляем оффсет прицеливания поверх текущего базового положения
+        Vector3 targetLocalPos = isAiming ? baseLocalPos + aimCameraOffset : baseLocalPos;
 
         // 3) bob при беге
         if (isSprinting && controller.isGrounded && moveInput.magnitude > 0.1f && !isAiming)
