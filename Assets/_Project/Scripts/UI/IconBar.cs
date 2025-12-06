@@ -42,18 +42,19 @@ public class IconBar : MonoBehaviour
     public void UpdateBar(float percent)
     {
         percent = Mathf.Clamp01(percent);
-        int activeCount = Mathf.RoundToInt(percent * maxIcons);
+        int activeCount = Mathf.FloorToInt(percent * maxIcons);
         float lastStage = percent * maxIcons - activeCount;
 
         for (int i = 0; i < icons.Count; i++)
             icons[i].sprite = (i < activeCount) ? fullIcon : emptyIcon;
-
+        
+        Debug.Log(lastStage);
         if (activeCount < icons.Count)
         {
-            if (lastStage < Mathf.Epsilon) icons[activeCount].sprite = emptyIcon;
-            else if (lastStage < 0.25) icons[activeCount].sprite = icon4Of5;
-            else if (lastStage < 0.5) icons[activeCount].sprite = icon3Of5;
-            else if (lastStage < 0.75) icons[activeCount].sprite = icon2Of5;
+            if (lastStage <= 0.01) icons[activeCount].sprite = emptyIcon;
+            else if (lastStage <= 0.25) icons[activeCount].sprite = icon4Of5;
+            else if (lastStage <= 0.5) icons[activeCount].sprite = icon3Of5;
+            else if (lastStage <= 0.75) icons[activeCount].sprite = icon2Of5;
             else icons[activeCount].sprite = fullIcon;
         }
     }
